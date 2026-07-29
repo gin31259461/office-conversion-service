@@ -2,6 +2,16 @@ using OfficeConversion.Conversion;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var configuredUrls = builder.Configuration[WebHostDefaults.ServerUrlsKey];
+if (string.IsNullOrWhiteSpace(configuredUrls))
+{
+    var appSettingsUrls = builder.Configuration["Hosting:Urls"];
+    builder.WebHost.UseUrls(
+        string.IsNullOrWhiteSpace(appSettingsUrls)
+            ? "http://localhost:8085"
+            : appSettingsUrls);
+}
+
 builder.Services.AddWindowsService(options => options.ServiceName = "OfficeConversion");
 builder.Services.AddControllers();
 builder.Services

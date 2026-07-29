@@ -3,8 +3,7 @@
   "profiles": {
     "Console": {
       "commandName": "Project",
-      "launchBrowser": false,
-      "applicationUrl": "http://localhost:5057"
+      "launchBrowser": false
     }
   }
 }

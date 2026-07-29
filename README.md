@@ -90,12 +90,17 @@ dotnet restore .\OfficeConversion.sln
 dotnet run --project .\OfficeConversion.Host\OfficeConversion.Host.csproj
 ```
 
-The development profile listens on `http://localhost:5057`.
+By default, the host listens on the URL configured by `Hosting:Urls` in
+`OfficeConversion.Host/appsettings.json`:
+
+```text
+http://localhost:8085
+```
 
 Check the host:
 
 ```powershell
-Invoke-RestMethod http://localhost:5057/health
+Invoke-RestMethod http://localhost:8085/health
 ```
 
 Expected response:
@@ -114,7 +119,7 @@ curl.exe `
   -X POST `
   -F "file=@C:\Documents\sample.docx" `
   -o sample.pdf `
-  http://localhost:5057/api/pdf
+  http://localhost:8085/api/pdf
 ```
 
 The multipart field name is not significant; the first uploaded file is used.
@@ -155,6 +160,9 @@ The default configuration is in
 
 ```json
 {
+  "Hosting": {
+    "Urls": "http://localhost:8085"
+  },
   "Conversion": {
     "QueueCapacity": 20,
     "TimeoutSeconds": 120
@@ -164,6 +172,7 @@ The default configuration is in
 
 | Setting | Valid range | Purpose |
 | --- | --- | --- |
+| `Hosting:Urls` | One or more semicolon-separated HTTP(S) URLs | Default addresses on which the standalone Kestrel host listens |
 | `Conversion:QueueCapacity` | `1`–`1000` | Maximum number of jobs waiting to be processed |
 | `Conversion:TimeoutSeconds` | `10`–`3600` | Maximum Office processing time before the watchdog terminates the tracked process |
 
@@ -175,10 +184,12 @@ $env:Conversion__TimeoutSeconds = "180"
 $env:ASPNETCORE_URLS = "http://127.0.0.1:5057"
 ```
 
+`ASPNETCORE_URLS` and the `--urls` command-line option override
+`Hosting:Urls`. If none of these settings is present, the application falls
+back to `http://localhost:8085`.
 [`launchSettings.json`](OfficeConversion.Host/Properties/launchSettings.json)
-is for local development only. Production hosts should configure URLs and
-settings through command-line arguments, environment variables, IIS, or service
-configuration.
+is for local development only. IIS supplies its own binding when hosting the
+application.
 
 Temporary work is stored under:
 
@@ -239,7 +250,7 @@ From an elevated PowerShell session:
 
 ```powershell
 $credential = Get-Credential
-$binaryPath = '"C:\Services\OfficeConversion\OfficeConversion.Host.exe" --urls http://127.0.0.1:5057'
+$binaryPath = '"C:\Services\OfficeConversion\OfficeConversion.Host.exe"'
 
 New-Service `
   -Name "OfficeConversion" `
