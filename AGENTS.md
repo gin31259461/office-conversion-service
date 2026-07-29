@@ -4,8 +4,8 @@
 
 Office Conversion Service is a Windows-only ASP.NET Core API that converts Word
 and Excel files with the locally installed Microsoft Office rendering engines.
-It targets `net10.0-windows` and can run as a console application, a Windows
-Service, or behind IIS.
+It targets `net10.0-windows` and can run as a console application, an
+interactive scheduled task, or behind IIS.
 
 The repository contains two projects:
 
@@ -61,6 +61,9 @@ operational safety requirements, not optional polish.
 
 ```text
 OfficeConversion.sln
+scripts/
+  Start-OfficeConversion.ps1
+  Start-OfficeConversion.vbs
 OfficeConversion.Host/
   Controllers/PDFController.cs
   Conversion/
@@ -276,7 +279,7 @@ Document any new security controls in `README.md`.
 
 ## Build and deployment
 
-Console or Windows Service publish:
+Console publish:
 
 ```powershell
 dotnet publish `
@@ -284,8 +287,28 @@ dotnet publish `
   -c Release `
   -r win-x64 `
   --self-contained false `
-  -o .\OfficeConversion.Host\bin\publish\service
+  -o .\OfficeConversion.Host\bin\publish\win-x64
 ```
+
+Interactive scheduled-task publish:
+
+```powershell
+dotnet publish `
+  .\OfficeConversion.Host\OfficeConversion.Host.csproj `
+  -c Release
+```
+
+`OfficeConversion.Host.csproj` sets `PublishDir` to
+`OfficeConversion.Host/bin/Publish`. `scripts/Start-OfficeConversion.vbs` is
+the windowless Task Scheduler entry point; it invokes
+`Start-OfficeConversion.ps1`, which starts the published executable, waits for
+it, and redirects stdout and stderr below the publish directory.
+
+The scheduled task must use **Run only when the user is logged on**. Running
+whether or not the user is logged on creates a non-interactive session and can
+fail for the same reason as the tested Windows Service configuration. Use the
+VBS launcher for the scheduled task. This is an operational workaround, not a
+supported server-side Office execution mode.
 
 IIS out-of-process publish:
 
@@ -300,8 +323,8 @@ dotnet publish `
 ```
 
 Publishing is validation only unless the task explicitly authorizes deployment.
-Do not register, start, stop, or remove a Windows Service; modify IIS; or copy
-files into a production directory without explicit user authorization.
+Do not modify IIS, copy files into a production directory, or create, run, stop,
+or modify a scheduled task without explicit user authorization.
 
 ## Required validation before handoff
 
@@ -320,6 +343,10 @@ dotnet build .\OfficeConversion.sln -c Release --no-restore
 
 For Office conversion changes, additionally run the relevant opt-in smoke tests
 and inspect for orphan processes.
+
+When changing `scripts/Start-OfficeConversion.ps1`, parse it with the PowerShell
+parser without executing it. Do not execute either launch script during
+validation when a deployed host may already own the configured port.
 
 Before reporting completion:
 

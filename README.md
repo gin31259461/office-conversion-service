@@ -8,7 +8,7 @@ execution.
 The same application can run as:
 
 - a console application backed by Kestrel;
-- a Windows Service;
+- an interactive scheduled task started when its dedicated user signs in;
 - an ASP.NET Core application behind IIS.
 
 ## Features
@@ -223,54 +223,55 @@ dotnet publish `
   --urls http://127.0.0.1:5057
 ```
 
-## Run as a Windows Service
+## Recommended Windows hosting: interactive scheduled task
 
-Publish:
+Windows Service hosting was tested and did not work reliably because Office COM
+automation runs in non-interactive Session 0. Use Task Scheduler with the VBS
+launcher below instead. This remains an operational workaround; Microsoft does
+not support unattended Office automation.
+
+Publish to the location expected by the launch scripts:
 
 ```powershell
 dotnet publish `
   .\OfficeConversion.Host\OfficeConversion.Host.csproj `
-  -c Release `
-  -r win-x64 `
-  --self-contained false `
-  -o .\OfficeConversion.Host\bin\publish\service
+  -c Release
 ```
 
-Copy the publish directory to a permanent location such as:
+The project `PublishDir` places the output in:
 
 ```text
-C:\Services\OfficeConversion
+OfficeConversion.Host\bin\Publish
 ```
 
-Use a dedicated Windows account. Sign in as that account at least once, activate
-Word and Excel, dismiss first-run prompts, install required fonts, and verify a
-manual conversion before registering the service.
+Create a Task Scheduler task with **Run only when the user is logged on**. Use a
+dedicated account that has launched and activated Word and Excel interactively,
+and keep that account signed in. Selecting **Run whether user is logged on or
+not** creates a non-interactive session and can reproduce the same Office
+failure.
 
-From an elevated PowerShell session:
+Configure the task action as follows:
 
-```powershell
-$credential = Get-Credential
-$binaryPath = '"C:\Services\OfficeConversion\OfficeConversion.Host.exe"'
+| Field | Value |
+| --- | --- |
+| Program/script | `C:\Windows\System32\wscript.exe` |
+| Arguments | `"C:\service\office-conversion-service\scripts\Start-OfficeConversion.vbs"` |
+| Start in | `C:\service\office-conversion-service\scripts` |
 
-New-Service `
-  -Name "OfficeConversion" `
-  -DisplayName "Office Conversion Service" `
-  -Description "Converts Word and Excel documents through Microsoft Office." `
-  -BinaryPathName $binaryPath `
-  -Credential $credential `
-  -StartupType Automatic
+`scripts\Start-OfficeConversion.vbs` prevents a console window from flashing
+and launches `Start-OfficeConversion.ps1` invisibly. The PowerShell launcher
+starts the published host, waits for it, and redirects its output to:
 
-Start-Service OfficeConversion
-Get-Service OfficeConversion
+```text
+OfficeConversion.Host\bin\Publish\log\out.txt
+OfficeConversion.Host\bin\Publish\log\err.txt
 ```
 
-The service account needs:
-
-- **Log on as a service** permission;
-- read and execute permission on the deployment directory;
-- write access to its temporary directory;
-- a valid Office installation, activation, and user profile;
-- access to every font required for faithful rendering.
+Configure the task not to start a second instance when one is already running,
+disable execution time limits, and optionally restart it after failure. Start
+and stop the host through Task Scheduler. If an old host still owns the HTTP
+port, terminate only that `OfficeConversion.Host` process; never terminate all
+Word or Excel processes.
 
 ## Run behind IIS
 
@@ -300,10 +301,9 @@ The publish command generates the required `web.config` and configures the
 ASP.NET Core Module to launch `OfficeConversion.Host.exe`.
 
 > [!TIP]
-> For long-running production conversions, the more predictable arrangement is
-> to run Office Conversion Service as a Windows Service and place IIS in front
-> of it as a reverse proxy. IIS application-pool recycling can otherwise
-> interrupt active work.
+> IIS application-pool recycling can interrupt active work. A separate host
+> behind IIS avoids tying conversions to the application-pool lifecycle, but
+> Office COM may still fail when it runs outside an interactive user session.
 
 ## Testing
 
@@ -346,6 +346,9 @@ dotnet format .\OfficeConversion.sln `
 ```text
 .
 ├── OfficeConversion.sln
+├── scripts
+│   ├── Start-OfficeConversion.ps1
+│   └── Start-OfficeConversion.vbs
 ├── OfficeConversion.Host
 │   ├── Controllers
 │   │   └── PDFController.cs
@@ -368,7 +371,8 @@ dotnet format .\OfficeConversion.sln `
 ## Operational notes
 
 - Use a dedicated Windows identity for Office automation.
-- Do not use that identity for interactive desktop Office work.
+- For scheduled-task hosting, keep that identity signed in but do not use its
+  desktop for unrelated interactive Office work.
 - Keep Word and Excel versions, fonts, language packs, and printer settings
   consistent between environments; they can affect document pagination.
 - The worker is intentionally single-threaded. Scaling requires isolated
@@ -390,11 +394,13 @@ Get-ItemProperty Registry::HKEY_CLASSES_ROOT\Word.Application\CurVer
 Get-ItemProperty Registry::HKEY_CLASSES_ROOT\Excel.Application\CurVer
 ```
 
-### Conversion works interactively but fails as a service
+### Conversion fails outside an interactive user session
 
-Run the service under the same dedicated account used to activate and initialize
+Run the host under the same dedicated account used to activate and initialize
 Office. Check profile creation, file-system permissions, fonts, language packs,
-and any hidden first-run or recovery dialogs.
+and any hidden first-run or recovery dialogs. Run the host with the interactive
+scheduled-task configuration documented above. If that is not operationally
+acceptable, replace Office COM with a server-safe conversion engine.
 
 ### Requests return `504`
 
